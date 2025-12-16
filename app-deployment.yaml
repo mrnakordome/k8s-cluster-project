@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask-app-deployment
+  namespace: hamravesh-project
+  labels:
+    app: flask-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: flask-app
+  template:
+    metadata:
+      labels:
+        app: flask-app
+    spec:
+      terminationGracePeriodSeconds: 5
+      imagePullSecrets:
+      - name: hamdocker-secret 
+      containers:
+      - name: flask-app
+        image: REPLACE_WITH_YOUR_REGISTRY_PATH/simple-web-app:latest 
+        ports:
+        - containerPort: 5000
+        env:  
+        - name: DB_HOST
+          value: "db-service" 
+        - name: DB_NAME
+          value: "mydb"
+        - name: POSTGRES_USER
+          value: "user"
+        - name: POSTGRES_PASSWORD
+          value: "password"
+        #test
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 5 
+          timeoutSeconds: 3        
+          failureThreshold: 5 
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 5 
+          timeoutSeconds: 3        
+          failureThreshold: 3 
+
+        resources: 
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 250m
+            memory: 256Mi

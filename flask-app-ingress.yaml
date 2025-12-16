@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flask-app-ingress
+  namespace: hamravesh-project
+spec:
+  ingressClassName: nginx # This assumes you will use a standard Nginx Ingress Controller 
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: flask-app-service  # <-- CORRECTED: Use the existing service name
+            port:
+              number: 80

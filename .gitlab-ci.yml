@@ -1,0 +1,57 @@
+variables:
+  CI_REGISTRY: registry.hamdocker.ir/aliamini83
+  DOCKER_IMAGE_NAME: registry.hamdocker.ir/aliamini83/simple-web-app 
+  KUBE_NAMESPACE: hamravesh-project 
+  CI_REGISTRY_USER: aliamini83
+  CI_REGISTRY_PASSWORD: wdxy8ddFh0MOHbw2A1!
+  DOCKER_HOST: unix:///var/run/docker.sock
+
+
+#tes
+
+stages:
+  - build
+  - deploy
+
+build_docker_image:
+  stage: build
+  image: docker:24.0.5
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -t $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA .
+    - echo "Tagging image as 'latest'"
+    - docker tag $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA $DOCKER_IMAGE_NAME:latest
+    - echo "Pushing image tags with retry logic..."
+    - for i in 1 2 3 4 5; do docker push $DOCKER_IMAGE_NAME:$CI_COMMIT_SHA && break || sleep 5; done
+    - for i in 1 2 3 4 5; do docker push $DOCKER_IMAGE_NAME:latest && break || sleep 5; done
+
+  tags:
+    - dind
+
+deploy_to_k8s:
+  stage: deploy
+  image: google/cloud-sdk:latest
+  script:
+    - export KUBECONFIG=$KUBE_CONFIG 
+    
+    - kubectl apply -f postgres-pv.yaml
+    - kubectl apply -f pvc.yaml
+    - kubectl apply -f db-deployment.yaml
+
+    - echo "Creating DB credentials Secret..."
+    - kubectl delete secret flask-db-secret -n $KUBE_NAMESPACE --ignore-not-found=true
+    - kubectl create secret generic flask-db-secret -n $KUBE_NAMESPACE --from-literal=DB_USER=user --from-literal=DB_PASS=password
+    
+    - echo "Creating ImagePullSecret for $CI_REGISTRY..."
+    - kubectl create secret docker-registry hamdocker-secret --docker-server=$CI_REGISTRY --docker-username=$CI_REGISTRY_USER --docker-password=$CI_REGISTRY_PASSWORD --namespace=$KUBE_NAMESPACE --save-config --dry-run=client -o yaml | kubectl apply -f -
+    
+    - sed -i "s|REPLACE_WITH_YOUR_REGISTRY_PATH/simple-web-app:latest|$DOCKER_IMAGE_NAME:$CI_COMMIT_SHA|g" app-deployment.yaml
+    - kubectl apply -f app-deployment.yaml
+    - kubectl apply -f flask-app-service.yaml 
+    - kubectl apply -f hpa.yaml
+    
+    - echo "Checking rollout status with 5 minute timeout..."
+    - kubectl rollout status deployment/flask-app-deployment -n $KUBE_NAMESPACE --timeout=5m
+    - echo "Deployment Complete!"
+  tags:
+    - dind
